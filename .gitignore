@@ -14,37 +14,17 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Test coverage
-coverage/
-
 # Logs
 *.log
 npm-debug.log*
 
-# Environment files (except the template)
+# Test coverage
+coverage/
+
+# Environment files (except examples)
 .env
 .env.local
 .env.*.local
-
-# TypeScript cache
-*.tsbuildinfo
-
-# ESLint cache
-.eslintcache
-
-# Temporary files
-*.tmp
-*.temp
-
-# Claude Code internal files (security)
-.claude/
-.augment/
-
-# Test files (internal only)
-*.test.ts
-*.spec.ts
-__tests__/
-tests/
 
 # Package lock (using npm)
 yarn.lock

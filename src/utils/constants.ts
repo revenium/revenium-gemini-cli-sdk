@@ -1,40 +1,30 @@
-/**
- * Constants for the Revenium Gemini CLI Metering package
- */
+export const DEFAULT_REVENIUM_URL = "https://api.revenium.ai";
 
-/** Default Revenium API base URL */
-export const DEFAULT_REVENIUM_URL = 'https://api.revenium.ai';
+export const OTLP_PATH = "/meter/v2/otlp";
 
-/** Path appended to base URL for OTLP endpoint */
-export const OTLP_PATH = '/meter/v2/otlp';
+export const API_KEY_PREFIX = "hak_";
 
-/** API key prefix required for valid Revenium API keys */
-export const API_KEY_PREFIX = 'hak_';
+export const GEMINI_CONFIG_DIR = ".gemini";
 
-/** Directory for Gemini CLI configuration */
-export const GEMINI_CONFIG_DIR = '.gemini';
+export const REVENIUM_ENV_FILE = "revenium.env";
 
-/** Filename for Revenium environment configuration */
-export const REVENIUM_ENV_FILE = 'revenium.env';
-
-/** File permissions for config file (owner read/write only) */
 export const CONFIG_FILE_MODE = 0o600;
 
-/** Environment variable names for Gemini CLI telemetry */
 export const ENV_VARS = {
-  // Gemini CLI telemetry settings
-  TELEMETRY_ENABLED: 'GEMINI_TELEMETRY_ENABLED',
-  TELEMETRY_TARGET: 'GEMINI_TELEMETRY_TARGET',
-  TELEMETRY_OTLP_ENDPOINT: 'GEMINI_TELEMETRY_OTLP_ENDPOINT',
-  TELEMETRY_OTLP_PROTOCOL: 'GEMINI_TELEMETRY_OTLP_PROTOCOL',
-  TELEMETRY_LOG_PROMPTS: 'GEMINI_TELEMETRY_LOG_PROMPTS',
-  // OTEL resource attributes (used for API key since Gemini CLI doesn't support OTLP headers)
-  RESOURCE_ATTRIBUTES: 'OTEL_RESOURCE_ATTRIBUTES',
-  // Revenium-specific
-  SUBSCRIBER_EMAIL: 'REVENIUM_SUBSCRIBER_EMAIL',
-  ORGANIZATION_ID: 'REVENIUM_ORGANIZATION_ID',
-  PRODUCT_ID: 'REVENIUM_PRODUCT_ID',
+  TELEMETRY_ENABLED: "GEMINI_TELEMETRY_ENABLED",
+  TELEMETRY_TARGET: "GEMINI_TELEMETRY_TARGET",
+  TELEMETRY_OTLP_ENDPOINT: "GEMINI_TELEMETRY_OTLP_ENDPOINT",
+  TELEMETRY_OTLP_PROTOCOL: "GEMINI_TELEMETRY_OTLP_PROTOCOL",
+  TELEMETRY_LOG_PROMPTS: "GEMINI_TELEMETRY_LOG_PROMPTS",
+  OTLP_HEADERS: "OTEL_EXPORTER_OTLP_HEADERS",
+  RESOURCE_ATTRIBUTES: "OTEL_RESOURCE_ATTRIBUTES",
+  SUBSCRIBER_EMAIL: "REVENIUM_SUBSCRIBER_EMAIL",
+  ORGANIZATION_NAME: "REVENIUM_ORGANIZATION_NAME",
+  PRODUCT_NAME: "REVENIUM_PRODUCT_NAME",
+  COST_MULTIPLIER: "REVENIUM_COST_MULTIPLIER",
 } as const;
 
+export const DEFAULT_COST_MULTIPLIER = 1.0;
+
 /** Resource attribute key for Revenium API key */
-export const REVENIUM_API_KEY_ATTR = 'revenium.api_key';
+export const REVENIUM_API_KEY_ATTR = "revenium.api_key";
