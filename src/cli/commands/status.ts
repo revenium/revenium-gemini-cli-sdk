@@ -4,7 +4,6 @@ import {
   loadConfig,
   configExists,
   isEnvLoaded,
-  getConfigPath,
 } from "../../core/config/loader.js";
 import { checkEndpointHealth } from "../../core/api/client.js";
 import { maskApiKey, maskEmail } from "../../utils/masking.js";
@@ -13,10 +12,13 @@ import { detectShell, getProfilePath } from "../../core/shell/detector.js";
 export async function statusCommand(): Promise<void> {
   console.log(chalk.bold("\nRevenium Gemini CLI Metering Status\n"));
 
-  const configPath = getConfigPath();
+  const shellType = detectShell();
+  const configFile =
+    shellType === "fish" ? "~/.gemini/revenium.fish" : "~/.gemini/revenium.env";
+
   if (!configExists()) {
     console.log(chalk.red("Configuration not found"));
-    console.log(chalk.dim(`Expected at: ${configPath}`));
+    console.log(chalk.dim(`Expected at: ${configFile}`));
     console.log(
       chalk.yellow(
         "\nRun `revenium-gemini setup` to configure Gemini CLI metering.",
@@ -26,7 +28,7 @@ export async function statusCommand(): Promise<void> {
   }
 
   console.log(chalk.green("Configuration file found"));
-  console.log(chalk.dim(`  ${configPath}`));
+  console.log(chalk.dim(`  ${configFile}`));
 
   const config = await loadConfig();
   if (!config) {
@@ -52,9 +54,6 @@ export async function statusCommand(): Promise<void> {
   }
 
   console.log("\n" + chalk.bold("Environment:"));
-  const shellType = detectShell();
-  const configFile =
-    shellType === "fish" ? "~/.gemini/revenium.fish" : "~/.gemini/revenium.env";
 
   if (isEnvLoaded()) {
     console.log(

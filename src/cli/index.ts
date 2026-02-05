@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { Command } from "commander";
 import { setupCommand } from "./commands/setup.js";
 import { statusCommand } from "./commands/status.js";
@@ -71,6 +73,16 @@ program
 
 export { program };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isDirectRun = (() => {
+  try {
+    const currentFile = fileURLToPath(import.meta.url);
+    const entryFile = resolve(process.argv[1]);
+    return currentFile === entryFile;
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectRun) {
   program.parse();
 }

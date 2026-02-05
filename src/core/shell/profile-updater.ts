@@ -59,16 +59,15 @@ async function createBackup(profilePath: string): Promise<void> {
   // Clean up old backups - keep only the 5 most recent
   try {
     const { readdir, unlink, stat } = await import("node:fs/promises");
-    const { dirname, basename } = await import("node:path");
+    const { dirname, basename, join } = await import("node:path");
 
     const dir = dirname(profilePath);
     const baseFilename = basename(profilePath);
     const files = await readdir(dir);
 
-    // Find all backup files for this profile
     const backupFiles = files
       .filter((f) => f.startsWith(`${baseFilename}.revenium-backup-`))
-      .map((f) => ({ name: f, path: `${dir}/${f}` }));
+      .map((f) => ({ name: f, path: join(dir, f) }));
 
     if (backupFiles.length > 5) {
       // Get file stats to sort by modification time

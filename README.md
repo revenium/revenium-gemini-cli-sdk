@@ -41,7 +41,7 @@ The wizard will prompt you for:
 
 The setup automatically updates your shell profile. Either:
 - Open a new terminal, OR
-- Run: `source ~/.gemini/revenium.env`
+- Run: `source ~/.gemini/revenium.env` (or `source ~/.gemini/revenium.fish` for Fish shell)
 
 ### 3. Use Gemini CLI Normally
 
@@ -166,8 +166,8 @@ If automatic shell profile update fails, add this line to your shell profile:
 
 **Fish** (`~/.config/fish/config.fish`):
 ```fish
-if test -f ~/.gemini/revenium.env
-    source ~/.gemini/revenium.env
+if test -f ~/.gemini/revenium.fish
+    source ~/.gemini/revenium.fish
 end
 ```
 
