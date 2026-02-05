@@ -105,7 +105,7 @@ The setup wizard creates `~/.gemini/revenium.env` with the following environment
 | `GEMINI_TELEMETRY_OTLP_ENDPOINT` | Revenium OTLP endpoint URL |
 | `GEMINI_TELEMETRY_OTLP_PROTOCOL` | OTLP protocol (`http`) |
 | `GEMINI_TELEMETRY_LOG_PROMPTS` | Include prompts in telemetry (`true`) |
-| `OTEL_EXPORTER_OTLP_HEADERS` | Authentication header with API key |
+| `OTEL_RESOURCE_ATTRIBUTES` | Resource attributes including API key (`revenium.api_key=hak_...`) |
 
 ## How It Works
 
@@ -165,7 +165,7 @@ Add to your `settings.json` (use `terminal.integrated.env.windows` or `.linux` a
     "GEMINI_TELEMETRY_OTLP_ENDPOINT": "https://api.revenium.ai/meter/v2/otlp",
     "GEMINI_TELEMETRY_OTLP_PROTOCOL": "http",
     "GEMINI_TELEMETRY_LOG_PROMPTS": "true",
-    "OTEL_EXPORTER_OTLP_HEADERS": "x-api-key=hak_YOUR_API_KEY_HERE"
+    "OTEL_RESOURCE_ATTRIBUTES": "revenium.api_key=hak_YOUR_API_KEY_HERE,cost_multiplier=1.0"
   }
 }
 ```
@@ -187,7 +187,7 @@ Configure these environment variables in your IDE's terminal settings:
 | `GEMINI_TELEMETRY_OTLP_ENDPOINT` | `https://api.revenium.ai/meter/v2/otlp` |
 | `GEMINI_TELEMETRY_OTLP_PROTOCOL` | `http` |
 | `GEMINI_TELEMETRY_LOG_PROMPTS` | `true` |
-| `OTEL_EXPORTER_OTLP_HEADERS` | `x-api-key=hak_YOUR_API_KEY` |
+| `OTEL_RESOURCE_ATTRIBUTES` | `revenium.api_key=hak_YOUR_API_KEY,cost_multiplier=1.0` |
 
 ## Troubleshooting
 

@@ -10,89 +10,93 @@ import {
   REVENIUM_API_KEY_ATTR,
 } from "../../utils/constants.js";
 import type { ReveniumConfig } from "../../types/index.js";
+import { detectShell } from "../shell/detector.js";
 
-/**
- * Gets the path to the Revenium configuration file.
- */
 export function getConfigPath(): string {
   return join(homedir(), GEMINI_CONFIG_DIR, REVENIUM_ENV_FILE);
 }
 
 /**
- * Checks if the configuration file exists.
+ * Gets the config path for the current shell.
+ * Returns .fish for Fish shell, .env for others.
  */
-export function configExists(): boolean {
-  return existsSync(getConfigPath());
+function getShellSpecificConfigPath(): string {
+  const shellType = detectShell();
+  if (shellType === "fish") {
+    return join(homedir(), GEMINI_CONFIG_DIR, "revenium.fish");
+  }
+  return getConfigPath();
 }
 
-/**
- * Parses an .env file content into key-value pairs.
- */
-function parseEnvContent(content: string): Record<string, string> {
+export function configExists(): boolean {
+  // Check if either .env or shell-specific config exists
+  const envPath = getConfigPath();
+  const shellPath = getShellSpecificConfigPath();
+  return existsSync(envPath) || existsSync(shellPath);
+}
+
+function parseEnvContent(
+  content: string,
+  isFish = false,
+): Record<string, string> {
   const result: Record<string, string> = {};
 
   for (const line of content.split("\n")) {
     let trimmed = line.trim();
 
-    // Skip empty lines and comments
     if (!trimmed || trimmed.startsWith("#")) {
       continue;
     }
 
-    // Handle 'export' prefix
-    if (trimmed.startsWith("export ")) {
-      trimmed = trimmed.substring(7).trim();
+    // Handle both POSIX (export VAR=value) and Fish (set -gx VAR value) syntax
+    if (isFish && trimmed.startsWith("set -gx ")) {
+      trimmed = trimmed.substring(8).trim();
+      // Fish format: set -gx KEY 'value' or set -gx KEY value
+      const spaceIndex = trimmed.indexOf(" ");
+      if (spaceIndex === -1) continue;
+
+      const key = trimmed.substring(0, spaceIndex).trim();
+      let value = trimmed.substring(spaceIndex + 1).trim();
+
+      // Remove quotes if present
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.substring(1, value.length - 1);
+        // Unescape Fish-style escapes: \' becomes ' and \\ becomes \
+        value = value.replace(/\\'/g, "'").replace(/\\\\/g, "\\");
+      }
+
+      result[key] = value;
+    } else {
+      // POSIX format: export KEY=value or KEY=value
+      if (trimmed.startsWith("export ")) {
+        trimmed = trimmed.substring(7).trim();
+      }
+
+      const equalsIndex = trimmed.indexOf("=");
+      if (equalsIndex === -1) {
+        continue;
+      }
+
+      const key = trimmed.substring(0, equalsIndex).trim();
+      let value = trimmed.substring(equalsIndex + 1).trim();
+
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.substring(1, value.length - 1);
+        // Unescape shell-escaped single quotes: '\'' becomes '
+        // Pattern matches the exact sequence produced by escapeShellValue
+        value = value.replace(/'\\''/g, "'");
+      }
+
+      result[key] = value;
     }
-
-    const equalsIndex = trimmed.indexOf("=");
-    if (equalsIndex === -1) {
-      continue;
-    }
-
-    const key = trimmed.substring(0, equalsIndex).trim();
-    let value = trimmed.substring(equalsIndex + 1).trim();
-
-    // Remove surrounding quotes if present
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.substring(1, value.length - 1);
-    }
-
-    result[key] = value;
   }
 
-  return result;
-}
-
-/**
- * Parses OTEL_RESOURCE_ATTRIBUTES value into key-value pairs.
- * Format: "key1=value1,key2=value2"
- */
-function parseOtelResourceAttributes(value: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!value || typeof value !== "string") return result;
-
-  const pairs = value.split(",");
-  for (const pair of pairs) {
-    const trimmed = pair.trim();
-    if (!trimmed) continue;
-
-    const equalsIndex = trimmed.indexOf("=");
-    if (equalsIndex === -1) continue;
-
-    const key = trimmed.substring(0, equalsIndex).trim();
-    let attrValue = trimmed.substring(equalsIndex + 1).trim();
-
-    try {
-      attrValue = decodeURIComponent(attrValue);
-    } catch {
-      // If decoding fails, use raw value
-    }
-
-    if (key) result[key] = attrValue;
-  }
   return result;
 }
 
@@ -101,18 +105,24 @@ function parseOtelResourceAttributes(value: string): Record<string, string> {
  * Format: "revenium.api_key=hak_xxx,other=value"
  */
 function extractApiKeyFromResourceAttrs(attrs: string): string | undefined {
-  const parsed = parseOtelResourceAttributes(attrs);
-  return parsed[REVENIUM_API_KEY_ATTR];
+  const pairs = attrs.split(",");
+  for (const pair of pairs) {
+    const equalsIndex = pair.indexOf("=");
+    if (equalsIndex === -1) continue;
+
+    const key = pair.substring(0, equalsIndex).trim();
+    const value = pair.substring(equalsIndex + 1).trim();
+
+    if (key === REVENIUM_API_KEY_ATTR && value) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
-/**
- * Extracts the base endpoint from the full OTLP endpoint URL.
- * Example: "https://api.revenium.ai/meter/v2/otlp" -> "https://api.revenium.ai"
- */
 function extractBaseEndpoint(fullEndpoint: string): string {
   try {
     const url = new URL(fullEndpoint);
-    // Remove the OTLP path suffix to get the base URL
     const path = url.pathname;
     if (path.includes("/meter/v2/otlp") || path.includes("/meter/v2/ai/otlp")) {
       url.pathname = "";
@@ -123,60 +133,57 @@ function extractBaseEndpoint(fullEndpoint: string): string {
   }
 }
 
-/**
- * Loads the Revenium configuration from the .env file.
- * Returns null if the file doesn't exist.
- */
 export async function loadConfig(): Promise<ReveniumConfig | null> {
-  const configPath = getConfigPath();
+  // Try to load shell-specific config first, fallback to .env
+  const shellPath = getShellSpecificConfigPath();
+  const envPath = getConfigPath();
+  const shellType = detectShell();
 
-  if (!existsSync(configPath)) {
+  let configPath = envPath;
+  let isFish = false;
+
+  // Prefer shell-specific config if it exists
+  if (existsSync(shellPath)) {
+    configPath = shellPath;
+    isFish = shellType === "fish";
+  } else if (!existsSync(envPath)) {
     return null;
   }
 
   try {
     const content = await readFile(configPath, "utf-8");
-    const env = parseEnvContent(content);
+    const env = parseEnvContent(content, isFish);
 
     const fullEndpoint = env[ENV_VARS.TELEMETRY_OTLP_ENDPOINT] || "";
-    const resourceAttrsStr = env[ENV_VARS.RESOURCE_ATTRIBUTES] || "";
-    const apiKey = extractApiKeyFromResourceAttrs(resourceAttrsStr);
+    const resourceAttrs = env[ENV_VARS.RESOURCE_ATTRIBUTES] || "";
+    const apiKey = extractApiKeyFromResourceAttrs(resourceAttrs);
 
     if (!apiKey) {
       return null;
     }
 
-    // Parse OTEL_RESOURCE_ATTRIBUTES for org/product (primary source)
-    const resourceAttrs = parseOtelResourceAttributes(resourceAttrsStr);
-
-    // Support both .name (preferred) and .id (legacy), with fallback to standalone vars
-    const organizationName =
-      resourceAttrs["organization.name"] ||
-      resourceAttrs["organization.id"] ||
-      env[ENV_VARS.ORGANIZATION_ID];
-
-    const productName =
-      resourceAttrs["product.name"] ||
-      resourceAttrs["product.id"] ||
-      env[ENV_VARS.PRODUCT_ID];
+    const costMultiplierStr = env[ENV_VARS.COST_MULTIPLIER];
+    let costMultiplier: number | undefined = undefined;
+    if (costMultiplierStr) {
+      const parsed = parseFloat(costMultiplierStr);
+      if (isFinite(parsed) && parsed > 0) {
+        costMultiplier = parsed;
+      }
+    }
 
     return {
       apiKey,
       endpoint: extractBaseEndpoint(fullEndpoint),
       email: env[ENV_VARS.SUBSCRIBER_EMAIL],
-      organizationName,
-      organizationId: organizationName, // Keep for backward compatibility
-      productName,
-      productId: productName, // Keep for backward compatibility
+      organizationName: env[ENV_VARS.ORGANIZATION_NAME],
+      productName: env[ENV_VARS.PRODUCT_NAME],
+      costMultiplier,
     };
   } catch {
     return null;
   }
 }
 
-/**
- * Checks if the environment variables are currently loaded in the shell.
- */
 export function isEnvLoaded(): boolean {
   return (
     process.env[ENV_VARS.TELEMETRY_ENABLED] === "true" &&
@@ -185,11 +192,7 @@ export function isEnvLoaded(): boolean {
   );
 }
 
-/**
- * Gets the full OTLP endpoint URL from a base URL.
- */
 export function getFullOtlpEndpoint(baseUrl: string): string {
-  // Remove trailing slash if present
   const cleanUrl = baseUrl.replace(/\/$/, "");
   return `${cleanUrl}${OTLP_PATH}`;
 }

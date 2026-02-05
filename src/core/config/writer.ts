@@ -6,6 +6,7 @@ import {
   REVENIUM_ENV_FILE,
   CONFIG_FILE_MODE,
   ENV_VARS,
+  DEFAULT_COST_MULTIPLIER,
   REVENIUM_API_KEY_ATTR,
 } from "../../utils/constants.js";
 import type { ReveniumConfig } from "../../types/index.js";
@@ -23,6 +24,28 @@ function escapeResourceAttributeValue(value: string): string {
     .replace(/,/g, "%2C")
     .replace(/=/g, "%3D")
     .replace(/"/g, "%22");
+}
+
+/**
+ * Escapes a value for safe use in shell export statements.
+ * Wraps value in single quotes and escapes any single quotes within.
+ */
+function escapeShellValue(value: string): string {
+  // Escape single quotes by replacing ' with '\''
+  const escaped = value.replace(/'/g, "'\\''");
+  return `'${escaped}'`;
+}
+
+/**
+ * Escapes a value for safe use in Fish shell set statements.
+ * Wraps value in single quotes and escapes any single quotes and backslashes within.
+ */
+function escapeFishValue(value: string): string {
+  // In Fish, within single quotes:
+  // - Backslash is escaped as \\
+  // - Single quote is escaped as \'
+  const escaped = value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  return `'${escaped}'`;
 }
 
 /**
@@ -52,7 +75,7 @@ function generateEnvContent(config: ReveniumConfig): string {
     `export ${ENV_VARS.TELEMETRY_TARGET}=local`,
     "",
     "# OTLP endpoint for Revenium metering",
-    `export ${ENV_VARS.TELEMETRY_OTLP_ENDPOINT}=${fullEndpoint}`,
+    `export ${ENV_VARS.TELEMETRY_OTLP_ENDPOINT}=${escapeShellValue(fullEndpoint)}`,
     "",
     "# OTLP protocol (http for OTLP/HTTP)",
     `export ${ENV_VARS.TELEMETRY_OTLP_PROTOCOL}=http`,
@@ -61,10 +84,19 @@ function generateEnvContent(config: ReveniumConfig): string {
     `export ${ENV_VARS.TELEMETRY_LOG_PROMPTS}=true`,
   ];
 
-  // Build resource attributes array
+  // Build resource attributes array (includes API key for authentication)
   // Note: Gemini CLI doesn't support OTEL_EXPORTER_OTLP_HEADERS, so we pass
   // the API key via OTEL_RESOURCE_ATTRIBUTES which gets included in the payload
   const resourceAttrs: string[] = [`${REVENIUM_API_KEY_ATTR}=${config.apiKey}`];
+
+  // Add cost multiplier (validate it's a valid number)
+  const costMultiplier = config.costMultiplier ?? DEFAULT_COST_MULTIPLIER;
+  if (isNaN(costMultiplier) || costMultiplier <= 0) {
+    throw new Error(
+      `Invalid cost multiplier: ${costMultiplier}. Must be a positive number.`,
+    );
+  }
+  resourceAttrs.push(`cost_multiplier=${costMultiplier}`);
 
   // Add optional email to resource attributes for attribution
   if (config.email) {
@@ -72,43 +104,54 @@ function generateEnvContent(config: ReveniumConfig): string {
       `user.email=${escapeResourceAttributeValue(config.email)}`,
     );
     lines.push("");
+    lines.push("# Subscriber email for attribution");
     lines.push(
-      "# Subscriber email for attribution (also in resource attributes)",
+      `export ${ENV_VARS.SUBSCRIBER_EMAIL}=${escapeShellValue(config.email)}`,
     );
-    lines.push(`export ${ENV_VARS.SUBSCRIBER_EMAIL}=${config.email}`);
   }
 
-  // Add organization name for cost attribution (support both new and old field names)
-  const organizationValue = config.organizationName || config.organizationId;
-  if (organizationValue) {
+  // Add organization name for cost attribution
+  if (config.organizationName) {
     resourceAttrs.push(
-      `organization.name=${escapeResourceAttributeValue(organizationValue)}`,
+      `organization.name=${escapeResourceAttributeValue(config.organizationName)}`,
     );
     lines.push("");
     lines.push("# Organization name for cost attribution");
-    lines.push(`export ${ENV_VARS.ORGANIZATION_ID}=${organizationValue}`);
+    lines.push(
+      `export ${ENV_VARS.ORGANIZATION_NAME}=${escapeShellValue(config.organizationName)}`,
+    );
   }
 
-  // Add product name for cost attribution (support both new and old field names)
-  const productValue = config.productName || config.productId;
-  if (productValue) {
+  // Add product name for cost attribution
+  if (config.productName) {
     resourceAttrs.push(
-      `product.name=${escapeResourceAttributeValue(productValue)}`,
+      `product.name=${escapeResourceAttributeValue(config.productName)}`,
     );
     lines.push("");
     lines.push("# Product name for cost attribution");
-    lines.push(`export ${ENV_VARS.PRODUCT_ID}=${productValue}`);
+    lines.push(
+      `export ${ENV_VARS.PRODUCT_NAME}=${escapeShellValue(config.productName)}`,
+    );
+  }
+
+  // Add cost multiplier env var
+  if (
+    config.costMultiplier !== undefined &&
+    config.costMultiplier !== DEFAULT_COST_MULTIPLIER
+  ) {
+    lines.push("");
+    lines.push("# Cost multiplier for pricing adjustments");
+    lines.push(
+      `export ${ENV_VARS.COST_MULTIPLIER}=${escapeShellValue(config.costMultiplier.toString())}`,
+    );
   }
 
   lines.push("");
   lines.push(
-    "# OTEL resource attributes (API key for authentication + optional attributes)",
+    "# OTEL resource attributes (business metadata for cost attribution)",
   );
   lines.push(
-    "# Note: Gemini CLI includes these in the OTLP payload for backend extraction",
-  );
-  lines.push(
-    `export ${ENV_VARS.RESOURCE_ATTRIBUTES}="${resourceAttrs.join(",")}"`,
+    `export ${ENV_VARS.RESOURCE_ATTRIBUTES}=${escapeShellValue(resourceAttrs.join(","))}`,
   );
 
   // Add advanced configuration section (commented out by default)
@@ -125,20 +168,29 @@ function generateEnvContent(config: ReveniumConfig): string {
     "# To add organization/product attribution manually, update OTEL_RESOURCE_ATTRIBUTES above.",
   );
   lines.push(
-    '# Example: export OTEL_RESOURCE_ATTRIBUTES="revenium.api_key=hak_xxx,organization.name=my-org,product.name=my-product"',
+    '# Example: export OTEL_RESOURCE_ATTRIBUTES="cost_multiplier=1.0,organization.name=my-org,product.name=my-product"',
   );
   lines.push("#");
-  if (!organizationValue) {
+  if (!config.organizationName) {
     lines.push(
-      "# Organization Name: Attribute Gemini CLI costs to a specific customer or company.",
+      "# Organization name: Attribute Gemini CLI costs to a specific customer or company.",
     );
-    lines.push(`# export ${ENV_VARS.ORGANIZATION_ID}=your-organization-name`);
+    lines.push(`# export ${ENV_VARS.ORGANIZATION_NAME}=your-organization-name`);
   }
-  if (!productValue) {
+  if (!config.productName) {
     lines.push(
-      "# Product Name: Attribute Gemini CLI costs to a specific product or project.",
+      "# Product name: Attribute Gemini CLI costs to a specific product or project.",
     );
-    lines.push(`# export ${ENV_VARS.PRODUCT_ID}=your-product-name`);
+    lines.push(`# export ${ENV_VARS.PRODUCT_NAME}=your-product-name`);
+  }
+  if (
+    config.costMultiplier === undefined ||
+    config.costMultiplier === DEFAULT_COST_MULTIPLIER
+  ) {
+    lines.push(
+      "# Cost multiplier: Adjust pricing (default: 1.0 = no discount).",
+    );
+    lines.push(`# export ${ENV_VARS.COST_MULTIPLIER}=1.0`);
   }
 
   lines.push("");
@@ -146,24 +198,133 @@ function generateEnvContent(config: ReveniumConfig): string {
 }
 
 /**
- * Writes the Revenium configuration to ~/.gemini/revenium.env.
+ * Generates the content for the revenium.fish file (Fish shell compatible).
+ */
+function generateFishContent(config: ReveniumConfig): string {
+  const fullEndpoint = getFullOtlpEndpoint(config.endpoint);
+
+  const lines: string[] = [
+    "# Revenium Gemini CLI Metering Configuration",
+    "# Generated by @revenium/gemini-cli-metering",
+    "#",
+    "# To load these variables, add to your Fish config:",
+    "#   source ~/.gemini/revenium.fish",
+    "",
+    "# Enable Gemini CLI telemetry",
+    `set -gx ${ENV_VARS.TELEMETRY_ENABLED} true`,
+    "",
+    "# Telemetry target (local = custom OTLP endpoint)",
+    `set -gx ${ENV_VARS.TELEMETRY_TARGET} local`,
+    "",
+    "# OTLP endpoint for Revenium metering",
+    `set -gx ${ENV_VARS.TELEMETRY_OTLP_ENDPOINT} ${escapeFishValue(fullEndpoint)}`,
+    "",
+    "# OTLP protocol (http for OTLP/HTTP)",
+    `set -gx ${ENV_VARS.TELEMETRY_OTLP_PROTOCOL} http`,
+    "",
+    "# Log prompts (include prompt content in telemetry)",
+    `set -gx ${ENV_VARS.TELEMETRY_LOG_PROMPTS} true`,
+  ];
+
+  // Build resource attributes array (includes API key for authentication)
+  // Note: Gemini CLI doesn't support OTEL_EXPORTER_OTLP_HEADERS, so we pass
+  // the API key via OTEL_RESOURCE_ATTRIBUTES which gets included in the payload
+  const resourceAttrs: string[] = [`${REVENIUM_API_KEY_ATTR}=${config.apiKey}`];
+
+  // Add cost multiplier (validate it's a valid number)
+  const costMultiplier = config.costMultiplier ?? DEFAULT_COST_MULTIPLIER;
+  if (isNaN(costMultiplier) || costMultiplier <= 0) {
+    throw new Error(
+      `Invalid cost multiplier: ${costMultiplier}. Must be a positive number.`,
+    );
+  }
+  resourceAttrs.push(`cost_multiplier=${costMultiplier}`);
+
+  // Add optional email to resource attributes for attribution
+  if (config.email) {
+    resourceAttrs.push(
+      `user.email=${escapeResourceAttributeValue(config.email)}`,
+    );
+    lines.push("");
+    lines.push("# Subscriber email for attribution");
+    lines.push(
+      `set -gx ${ENV_VARS.SUBSCRIBER_EMAIL} ${escapeFishValue(config.email)}`,
+    );
+  }
+
+  // Add organization name for cost attribution
+  if (config.organizationName) {
+    resourceAttrs.push(
+      `organization.name=${escapeResourceAttributeValue(config.organizationName)}`,
+    );
+    lines.push("");
+    lines.push("# Organization name for cost attribution");
+    lines.push(
+      `set -gx ${ENV_VARS.ORGANIZATION_NAME} ${escapeFishValue(config.organizationName)}`,
+    );
+  }
+
+  // Add product name for cost attribution
+  if (config.productName) {
+    resourceAttrs.push(
+      `product.name=${escapeResourceAttributeValue(config.productName)}`,
+    );
+    lines.push("");
+    lines.push("# Product name for cost attribution");
+    lines.push(
+      `set -gx ${ENV_VARS.PRODUCT_NAME} ${escapeFishValue(config.productName)}`,
+    );
+  }
+
+  // Add cost multiplier env var
+  if (
+    config.costMultiplier !== undefined &&
+    config.costMultiplier !== DEFAULT_COST_MULTIPLIER
+  ) {
+    lines.push("");
+    lines.push("# Cost multiplier for pricing adjustments");
+    lines.push(
+      `set -gx ${ENV_VARS.COST_MULTIPLIER} ${escapeFishValue(config.costMultiplier.toString())}`,
+    );
+  }
+
+  lines.push("");
+  lines.push(
+    "# OTEL resource attributes (business metadata for cost attribution)",
+  );
+  lines.push(
+    `set -gx ${ENV_VARS.RESOURCE_ATTRIBUTES} ${escapeFishValue(resourceAttrs.join(","))}`,
+  );
+
+  lines.push("");
+  return lines.join("\n");
+}
+
+/**
+ * Writes the Revenium configuration to ~/.gemini/revenium.env and ~/.gemini/revenium.fish.
  * Creates the directory if it doesn't exist and sets file permissions to 600.
  */
-export async function writeConfig(config: ReveniumConfig): Promise<string> {
+export async function writeConfig(
+  config: ReveniumConfig,
+): Promise<{ envPath: string; fishPath: string }> {
   const configDir = getGeminiConfigDir();
   const configPath = join(configDir, REVENIUM_ENV_FILE);
+  const fishConfigPath = join(configDir, "revenium.fish");
 
-  // Ensure the directory exists
-  await mkdir(configDir, { recursive: true });
+  // Ensure the directory exists with restrictive permissions (700)
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
 
-  // Generate and write the content
+  // Generate and write the POSIX shell content (bash/zsh)
   const content = generateEnvContent(config);
   await writeFile(configPath, content, { encoding: "utf-8" });
-
-  // Set restrictive permissions (owner read/write only)
   await chmod(configPath, CONFIG_FILE_MODE);
 
-  return configPath;
+  // Generate and write the Fish shell content
+  const fishContent = generateFishContent(config);
+  await writeFile(fishConfigPath, fishContent, { encoding: "utf-8" });
+  await chmod(fishConfigPath, CONFIG_FILE_MODE);
+
+  return { envPath: configPath, fishPath: fishConfigPath };
 }
 
 /**

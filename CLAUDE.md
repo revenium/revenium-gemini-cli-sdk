@@ -80,7 +80,7 @@ The OTLP endpoint path is defined in `constants.ts` as `OTLP_PATH = '/meter/v2/o
 - `GEMINI_TELEMETRY_OTLP_ENDPOINT` - OTLP endpoint URL
 - `GEMINI_TELEMETRY_OTLP_PROTOCOL` - Protocol (http/grpc)
 - `GEMINI_TELEMETRY_LOG_PROMPTS` - Include prompts in telemetry
-- `OTEL_EXPORTER_OTLP_HEADERS` - Authentication headers
+- `OTEL_RESOURCE_ATTRIBUTES` - Resource attributes including API key (revenium.api_key=hak_...)
 
 ## Testing
 
