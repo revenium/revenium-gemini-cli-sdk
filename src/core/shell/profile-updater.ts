@@ -1,12 +1,12 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import type { ShellType, ShellUpdateResult } from '../../types/index.js';
-import { detectShell, getProfilePath, getSourceCommand } from './detector.js';
-import { getConfigFilePath } from '../config/writer.js';
+import { readFile, writeFile, copyFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import type { ShellType, ShellUpdateResult } from "../../types/index.js";
+import { detectShell, getProfilePath, getSourceCommand } from "./detector.js";
+import { getConfigFilePath } from "../config/writer.js";
 
 /** Marker comment to identify our configuration block */
-const CONFIG_MARKER_START = '# >>> revenium-gemini-cli-metering >>>';
-const CONFIG_MARKER_END = '# <<< revenium-gemini-cli-metering <<<';
+const CONFIG_MARKER_START = "# >>> revenium-gemini-cli-metering >>>";
+const CONFIG_MARKER_END = "# <<< revenium-gemini-cli-metering <<<";
 
 /**
  * Checks if the shell profile already has the Revenium source command.
@@ -16,7 +16,7 @@ async function hasReveniumConfig(profilePath: string): Promise<boolean> {
     return false;
   }
 
-  const content = await readFile(profilePath, 'utf-8');
+  const content = await readFile(profilePath, "utf-8");
   return content.includes(CONFIG_MARKER_START);
 }
 
@@ -40,9 +40,55 @@ function removeExistingConfig(content: string): string {
   }
 
   const before = content.substring(0, startIndex).trimEnd();
-  const after = content.substring(endIndex + CONFIG_MARKER_END.length).trimStart();
+  const after = content
+    .substring(endIndex + CONFIG_MARKER_END.length)
+    .trimStart();
 
-  return before + (after ? '\n' + after : '');
+  return before + (after ? "\n" + after : "");
+}
+
+/**
+ * Creates a backup of the shell profile file and cleans up old backups.
+ * Keeps only the 5 most recent backups.
+ */
+async function createBackup(profilePath: string): Promise<void> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = `${profilePath}.revenium-backup-${timestamp}`;
+  await copyFile(profilePath, backupPath);
+
+  // Clean up old backups - keep only the 5 most recent
+  try {
+    const { readdir, unlink, stat } = await import("node:fs/promises");
+    const { dirname, basename } = await import("node:path");
+
+    const dir = dirname(profilePath);
+    const baseFilename = basename(profilePath);
+    const files = await readdir(dir);
+
+    // Find all backup files for this profile
+    const backupFiles = files
+      .filter((f) => f.startsWith(`${baseFilename}.revenium-backup-`))
+      .map((f) => ({ name: f, path: `${dir}/${f}` }));
+
+    if (backupFiles.length > 5) {
+      // Get file stats to sort by modification time
+      const filesWithStats = await Promise.all(
+        backupFiles.map(async (f) => ({
+          ...f,
+          mtime: (await stat(f.path)).mtime,
+        })),
+      );
+
+      // Sort by modification time (oldest first)
+      filesWithStats.sort((a, b) => a.mtime.getTime() - b.mtime.getTime());
+
+      // Delete oldest backups, keeping only 5 most recent
+      const toDelete = filesWithStats.slice(0, filesWithStats.length - 5);
+      await Promise.all(toDelete.map((f) => unlink(f.path)));
+    }
+  } catch {
+    // Ignore cleanup errors - backup was created successfully
+  }
 }
 
 /**
@@ -52,12 +98,12 @@ function removeExistingConfig(content: string): string {
 export async function updateShellProfile(): Promise<ShellUpdateResult> {
   const shellType = detectShell();
 
-  if (shellType === 'unknown') {
+  if (shellType === "unknown") {
     return {
       success: false,
       shellType,
       message:
-        'Could not detect shell type. Please manually add the source command to your shell profile.',
+        "Could not detect shell type. Please manually add the source command to your shell profile.",
     };
   }
 
@@ -75,11 +121,11 @@ export async function updateShellProfile(): Promise<ShellUpdateResult> {
 
   // Check if already configured
   if (await hasReveniumConfig(profilePath)) {
-    // Remove existing and re-add (in case config path changed)
-    let content = await readFile(profilePath, 'utf-8');
+    await createBackup(profilePath);
+    let content = await readFile(profilePath, "utf-8");
     content = removeExistingConfig(content);
     const configBlock = generateConfigBlock(shellType, configPath);
-    await writeFile(profilePath, content + configBlock, 'utf-8');
+    await writeFile(profilePath, content + configBlock, "utf-8");
 
     return {
       success: true,
@@ -90,13 +136,14 @@ export async function updateShellProfile(): Promise<ShellUpdateResult> {
   }
 
   // Add new configuration
-  let content = '';
+  let content = "";
   if (existsSync(profilePath)) {
-    content = await readFile(profilePath, 'utf-8');
+    await createBackup(profilePath);
+    content = await readFile(profilePath, "utf-8");
   }
 
   const configBlock = generateConfigBlock(shellType, configPath);
-  await writeFile(profilePath, content + configBlock, 'utf-8');
+  await writeFile(profilePath, content + configBlock, "utf-8");
 
   return {
     success: true,
@@ -111,8 +158,11 @@ export async function updateShellProfile(): Promise<ShellUpdateResult> {
  */
 export function getManualInstructions(shellType: ShellType): string {
   const configPath = getConfigFilePath();
-  const sourceCmd = getSourceCommand(shellType, configPath);
+  // For Fish shell, use .fish file instead of .env
+  const actualConfigPath =
+    shellType === "fish" ? configPath.replace(/\.env$/, ".fish") : configPath;
+  const sourceCmd = getSourceCommand(shellType, actualConfigPath);
   const profilePath = getProfilePath(shellType);
 
-  return `Add the following to ${profilePath || 'your shell profile'}:\n\n${sourceCmd}`;
+  return `Add the following to ${profilePath || "your shell profile"}:\n\n${sourceCmd}`;
 }

@@ -1,78 +1,185 @@
-import type { OTLPLogsPayload, OTLPResponse, HealthCheckResult } from '../../types/index.js';
-import { getFullOtlpEndpoint } from '../config/loader.js';
-import { REVENIUM_API_KEY_ATTR } from '../../utils/constants.js';
+import type {
+  OTLPLogsPayload,
+  OTLPResponse,
+  HealthCheckResult,
+} from "../../types/index.js";
+import { getFullOtlpEndpoint } from "../config/loader.js";
+import { DEFAULT_COST_MULTIPLIER } from "../../utils/constants.js";
+import { getVersion } from "../../utils/version.js";
 
-/**
- * Sends an OTLP logs payload to the Revenium endpoint.
- * Note: API key is included in the payload's resource attributes, not headers,
- * because Gemini CLI doesn't support OTEL_EXPORTER_OTLP_HEADERS.
- */
+const REQUEST_TIMEOUT_MS = 30000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
+function isRetryableError(error: Error): boolean {
+  return (
+    error.message.includes("ECONNRESET") ||
+    error.message.includes("ETIMEDOUT") ||
+    error.message.includes("ENOTFOUND") ||
+    error.message.includes("network") ||
+    error.message.includes("timeout")
+  );
+}
+
+function isRetryableStatusCode(status: number): boolean {
+  return (
+    status === 408 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sanitizeErrorMessage(message: string, apiKey: string): string {
+  // Escape regex metacharacters to treat API key as literal string
+  const escapedKey = apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return message.replace(new RegExp(escapedKey, "g"), "***");
+}
+
 export async function sendOtlpLogs(
   baseEndpoint: string,
-  _apiKey: string, // API key is in the payload resource attributes
-  payload: OTLPLogsPayload
+  apiKey: string,
+  payload: OTLPLogsPayload,
 ): Promise<OTLPResponse> {
   const fullEndpoint = getFullOtlpEndpoint(baseEndpoint);
   const url = `${fullEndpoint}/v1/logs`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        clearTimeout(timeoutId);
+        const sanitizedError = sanitizeErrorMessage(errorText, apiKey);
+
+        if (
+          isRetryableStatusCode(response.status) &&
+          attempt < MAX_RETRIES - 1
+        ) {
+          lastError = new Error(
+            `OTLP request failed: ${response.status} ${response.statusText} - ${sanitizedError}`,
+          );
+          await sleep(RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+
+        throw new Error(
+          `OTLP request failed: ${response.status} ${response.statusText} - ${sanitizedError}`,
+        );
+      }
+
+      const result = await response.json();
+      clearTimeout(timeoutId);
+      return result as OTLPResponse;
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          lastError = new Error(
+            `Request timeout after ${REQUEST_TIMEOUT_MS}ms`,
+          );
+        } else {
+          lastError = new Error(sanitizeErrorMessage(error.message, apiKey));
+        }
+
+        if (isRetryableError(lastError) && attempt < MAX_RETRIES - 1) {
+          await sleep(RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+
+        throw lastError;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError || new Error("Request failed after retries");
+}
+
+export interface TestPayloadOptions {
+  email?: string;
+  organizationName?: string;
+  productName?: string;
+  costMultiplier?: number;
+}
+
+export function createTestPayload(
+  sessionId: string,
+  options: TestPayloadOptions,
+): OTLPLogsPayload {
+  const version = getVersion();
+  const now = BigInt(Date.now()) * 1_000_000n;
+
+  const logAttributes: Array<{ key: string; value: { stringValue: string } }> =
+    [
+      { key: "session.id", value: { stringValue: sessionId } },
+      { key: "model", value: { stringValue: "cli-connectivity-test" } },
+      { key: "input_tokens", value: { stringValue: "0" } },
+      { key: "output_tokens", value: { stringValue: "0" } },
+      { key: "cache_read_tokens", value: { stringValue: "0" } },
+      { key: "cache_creation_tokens", value: { stringValue: "0" } },
+      { key: "cost_usd", value: { stringValue: "0.0" } },
+      { key: "duration_ms", value: { stringValue: "0" } },
+    ];
+
+  if (options.email) {
+    logAttributes.push({
+      key: "user.email",
+      value: { stringValue: options.email },
+    });
+  }
+
+  const resourceAttributes: Array<{
+    key: string;
+    value: { stringValue: string };
+  }> = [{ key: "service.name", value: { stringValue: "gemini-cli" } }];
+
+  const costMultiplier = options.costMultiplier ?? DEFAULT_COST_MULTIPLIER;
+  resourceAttributes.push({
+    key: "cost_multiplier",
+    value: { stringValue: costMultiplier.toString() },
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OTLP request failed: ${response.status} ${response.statusText} - ${errorText}`);
+  if (options.email) {
+    resourceAttributes.push({
+      key: "user.email",
+      value: { stringValue: options.email },
+    });
   }
 
-  return response.json() as Promise<OTLPResponse>;
-}
-
-/**
- * Options for creating a test payload.
- */
-export interface TestPayloadOptions {
-  /** API key for authentication (included in resource attributes) */
-  apiKey: string;
-  /** Optional subscriber email for attribution */
-  email?: string;
-}
-
-/**
- * Creates a minimal test OTLP logs payload.
- */
-export function createTestPayload(sessionId: string, options: TestPayloadOptions): OTLPLogsPayload {
-  const now = Date.now() * 1_000_000; // Convert to nanoseconds
-
-  // Build log record attributes
-  const logAttributes: Array<{ key: string; value: { stringValue: string } }> = [
-    { key: 'session.id', value: { stringValue: sessionId } },
-    { key: 'model', value: { stringValue: 'cli-connectivity-test' } },
-    { key: 'input_tokens', value: { stringValue: '0' } },
-    { key: 'output_tokens', value: { stringValue: '0' } },
-    { key: 'cache_read_tokens', value: { stringValue: '0' } },
-    { key: 'cache_creation_tokens', value: { stringValue: '0' } },
-    { key: 'cost_usd', value: { stringValue: '0.0' } },
-    { key: 'duration_ms', value: { stringValue: '0' } },
-  ];
-
-  // Add optional subscriber email
-  if (options.email) {
-    logAttributes.push({ key: 'user.email', value: { stringValue: options.email } });
+  if (options.organizationName) {
+    resourceAttributes.push({
+      key: "organization.name",
+      value: { stringValue: options.organizationName },
+    });
   }
 
-  // Build resource attributes (includes API key for authentication)
-  const resourceAttributes: Array<{ key: string; value: { stringValue: string } }> = [
-    { key: 'service.name', value: { stringValue: 'gemini-cli' } },
-    { key: REVENIUM_API_KEY_ATTR, value: { stringValue: options.apiKey } },
-  ];
-
-  // Add email to resource attributes too
-  if (options.email) {
-    resourceAttributes.push({ key: 'user.email', value: { stringValue: options.email } });
+  if (options.productName) {
+    resourceAttributes.push({
+      key: "product.name",
+      value: { stringValue: options.productName },
+    });
   }
 
   return {
@@ -84,13 +191,13 @@ export function createTestPayload(sessionId: string, options: TestPayloadOptions
         scopeLogs: [
           {
             scope: {
-              name: 'gemini_cli',
-              version: '0.1.0',
+              name: "gemini_cli",
+              version,
             },
             logRecords: [
               {
                 timeUnixNano: now.toString(),
-                body: { stringValue: 'gemini_cli.api_request' },
+                body: { stringValue: "gemini_cli.api_request" },
                 attributes: logAttributes,
               },
             ],
@@ -101,28 +208,22 @@ export function createTestPayload(sessionId: string, options: TestPayloadOptions
   };
 }
 
-/**
- * Generates a unique session ID for test payloads.
- */
 export function generateTestSessionId(): string {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 8);
   return `test-${timestamp}-${random}`;
 }
 
-/**
- * Performs a health check by sending a minimal test payload to the endpoint.
- */
 export async function checkEndpointHealth(
   baseEndpoint: string,
   apiKey: string,
-  options?: Omit<TestPayloadOptions, 'apiKey'>
+  options?: TestPayloadOptions,
 ): Promise<HealthCheckResult> {
   const startTime = Date.now();
 
   try {
     const sessionId = generateTestSessionId();
-    const payload = createTestPayload(sessionId, { apiKey, ...options });
+    const payload = createTestPayload(sessionId, options || {});
     const response = await sendOtlpLogs(baseEndpoint, apiKey, payload);
 
     const latencyMs = Date.now() - startTime;
@@ -135,10 +236,9 @@ export async function checkEndpointHealth(
     };
   } catch (error) {
     const latencyMs = Date.now() - startTime;
-    const message = error instanceof Error ? error.message : 'Unknown error';
-
-    // Try to extract status code from error message
-    const statusMatch = message.match(/(\d{3})/);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    // Extract HTTP status code only from "OTLP request failed: XXX" pattern
+    const statusMatch = message.match(/OTLP request failed: (\d{3})/);
     const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
 
     return {

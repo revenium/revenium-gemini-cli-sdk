@@ -33,6 +33,9 @@ revenium-gemini setup
 The wizard will prompt you for:
 - **API Key**: Your Revenium API key (`hak_...`)
 - **Email**: For usage attribution (optional)
+- **Organization Name**: For cost attribution by customer or team (optional)
+- **Product Name**: For cost attribution by project or product (optional)
+- **Cost Multiplier**: Pricing adjustment factor, e.g., `0.8` for 20% discount (optional)
 
 ### 2. Restart Your Terminal
 
@@ -56,10 +59,13 @@ Interactive setup wizard to configure Gemini CLI metering.
 revenium-gemini setup [options]
 
 Options:
-  -k, --api-key <key>     Revenium API key (hak_...)
-  -e, --email <email>     Email for usage attribution
-  --endpoint <url>        Revenium API endpoint URL (default: https://api.revenium.ai)
-  --skip-shell-update     Skip automatic shell profile update
+  -k, --api-key <key>          Revenium API key (hak_...)
+  -e, --email <email>          Email for usage attribution
+  -o, --organization <name>    Organization name for cost attribution
+  -p, --product <name>         Product name for cost attribution
+  --cost-multiplier <number>   Pricing adjustment factor (default: 1.0)
+  --endpoint <url>             Revenium API endpoint (default: https://api.revenium.ai)
+  --skip-shell-update          Skip automatic shell profile update
 ```
 
 **Non-interactive mode:**
@@ -67,7 +73,9 @@ Options:
 ```bash
 revenium-gemini setup \
   --api-key hak_your_key_here \
-  --email developer@company.com
+  --email developer@company.com \
+  --organization "Acme Corp" \
+  --product "AI Platform"
 ```
 
 ### `revenium-gemini status`
@@ -100,12 +108,28 @@ The setup wizard creates `~/.gemini/revenium.env` with the following environment
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_TELEMETRY_ENABLED` | Enables Gemini CLI telemetry export (set to `true`) |
+| `GEMINI_TELEMETRY_ENABLED` | Enables Gemini CLI telemetry export |
 | `GEMINI_TELEMETRY_TARGET` | Target type (`local` for custom OTLP endpoint) |
 | `GEMINI_TELEMETRY_OTLP_ENDPOINT` | Revenium OTLP endpoint URL |
 | `GEMINI_TELEMETRY_OTLP_PROTOCOL` | OTLP protocol (`http`) |
-| `GEMINI_TELEMETRY_LOG_PROMPTS` | Include prompts in telemetry (`true`) |
-| `OTEL_EXPORTER_OTLP_HEADERS` | Authentication header with API key |
+| `GEMINI_TELEMETRY_LOG_PROMPTS` | Include prompts in telemetry |
+| `OTEL_EXPORTER_OTLP_HEADERS` | API key authentication header |
+| `OTEL_RESOURCE_ATTRIBUTES` | Business metadata for cost attribution |
+| `REVENIUM_ORGANIZATION_NAME` | Organization name (optional) |
+| `REVENIUM_PRODUCT_NAME` | Product name (optional) |
+| `REVENIUM_COST_MULTIPLIER` | Pricing adjustment factor (optional) |
+
+## Cost Attribution
+
+Revenium supports flexible cost attribution to track AI spend across your organization:
+
+| Field | Use Case | Example |
+|-------|----------|---------|
+| **Organization** | Attribute costs to a customer, team, or business unit | `Acme Corp`, `Engineering Team` |
+| **Product** | Track costs by project, application, or service | `Customer Support Bot`, `Code Assistant` |
+| **Cost Multiplier** | Apply negotiated discounts or internal chargebacks | `0.8` = 20% discount, `1.2` = 20% markup |
+
+These fields are included in the OTLP resource attributes and appear in Revenium dashboards for filtering and reporting.
 
 ## How It Works
 
@@ -165,7 +189,8 @@ Add to your `settings.json` (use `terminal.integrated.env.windows` or `.linux` a
     "GEMINI_TELEMETRY_OTLP_ENDPOINT": "https://api.revenium.ai/meter/v2/otlp",
     "GEMINI_TELEMETRY_OTLP_PROTOCOL": "http",
     "GEMINI_TELEMETRY_LOG_PROMPTS": "true",
-    "OTEL_EXPORTER_OTLP_HEADERS": "x-api-key=hak_YOUR_API_KEY_HERE"
+    "OTEL_EXPORTER_OTLP_HEADERS": "x-api-key=hak_YOUR_API_KEY_HERE",
+    "OTEL_RESOURCE_ATTRIBUTES": "cost_multiplier=1.0,organization.name=YOUR_ORG,product.name=YOUR_PRODUCT"
   }
 }
 ```
@@ -188,6 +213,7 @@ Configure these environment variables in your IDE's terminal settings:
 | `GEMINI_TELEMETRY_OTLP_PROTOCOL` | `http` |
 | `GEMINI_TELEMETRY_LOG_PROMPTS` | `true` |
 | `OTEL_EXPORTER_OTLP_HEADERS` | `x-api-key=hak_YOUR_API_KEY` |
+| `OTEL_RESOURCE_ATTRIBUTES` | `cost_multiplier=1.0,organization.name=YOUR_ORG,product.name=YOUR_PRODUCT` |
 
 ## Troubleshooting
 
