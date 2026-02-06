@@ -19,6 +19,8 @@ export interface ReveniumConfig {
    * Product or application identifier
    */
   productId?: string;
+  /** Optional cost multiplier for adjusting reported costs */
+  costMultiplier?: number;
 }
 
 /**
