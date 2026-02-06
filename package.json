@@ -2,6 +2,7 @@
   "name": "@revenium/gemini-cli-metering",
   "version": "0.1.0",
   "description": "CLI tool to configure Gemini CLI telemetry export to Revenium",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
