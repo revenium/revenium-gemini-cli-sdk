@@ -16,16 +16,13 @@ import type { ReveniumConfig } from "../../types/index.js";
 interface SetupOptions {
   apiKey?: string;
   email?: string;
-  endpoint?: string;
-  skipShellUpdate?: boolean;
   organizationName?: string;
   productName?: string;
   costMultiplier?: number;
+  endpoint?: string;
+  skipShellUpdate?: boolean;
 }
 
-/**
- * Interactive setup wizard for Revenium Gemini CLI metering.
- */
 export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   console.log(chalk.bold("\nRevenium Gemini CLI Metering Setup\n"));
   console.log(
@@ -34,16 +31,19 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     ),
   );
 
-  // Collect configuration
   const config = await collectConfiguration(options);
-
-  // Validate API key with endpoint
   const spinner = ora("Testing API key...").start();
 
   try {
     const healthResult = await checkEndpointHealth(
       config.endpoint,
       config.apiKey,
+      {
+        email: config.email,
+        organizationName: config.organizationName,
+        productName: config.productName,
+        costMultiplier: config.costMultiplier,
+      },
     );
 
     if (!healthResult.healthy) {
@@ -67,12 +67,13 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     process.exit(1);
   }
 
-  // Write configuration file
   const writeSpinner = ora("Writing configuration...").start();
 
   try {
-    const configPath = await writeConfig(config);
-    writeSpinner.succeed(`Configuration written to ${chalk.cyan(configPath)}`);
+    const { envPath, fishPath } = await writeConfig(config);
+    writeSpinner.succeed(
+      `Configuration written to ${chalk.cyan(envPath)} and ${chalk.cyan(fishPath)}`,
+    );
   } catch (error) {
     writeSpinner.fail("Failed to write configuration");
     console.error(
@@ -83,7 +84,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     process.exit(1);
   }
 
-  // Update shell profile
   if (!options.skipShellUpdate) {
     const shellSpinner = ora("Updating shell profile...").start();
 
@@ -99,7 +99,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
           chalk.dim(`\nManual setup:\n${getManualInstructions(shellType)}`),
         );
       }
-    } catch (error) {
+    } catch {
       shellSpinner.warn("Could not update shell profile automatically");
       const shellType = detectShell();
       console.log(
@@ -108,7 +108,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     }
   }
 
-  // Print success message
   printSuccessMessage(config);
 }
 
@@ -133,9 +132,58 @@ async function collectConfiguration(
       message: "Enter your email (for usage attribution, optional):",
       when: !options.email,
       validate: (input: string) => {
-        if (!input) return true; // Optional
+        if (!input) return true;
         const result = validateEmail(input);
         return result.valid || result.errors.join(", ");
+      },
+    },
+    {
+      type: "input",
+      name: "organizationName",
+      message: "Organization name (for cost attribution, optional):",
+      when: !options.organizationName,
+      validate: (input: string) => {
+        if (!input) return true;
+        const trimmed = input.trim();
+        if (trimmed.length === 0) {
+          return "Organization name cannot be empty or whitespace-only";
+        }
+        if (trimmed.length > 255) {
+          return "Organization name is too long (max 255 characters)";
+        }
+        return true;
+      },
+    },
+    {
+      type: "input",
+      name: "productName",
+      message: "Product name (for cost attribution, optional):",
+      when: !options.productName,
+      validate: (input: string) => {
+        if (!input) return true;
+        const trimmed = input.trim();
+        if (trimmed.length === 0) {
+          return "Product name cannot be empty or whitespace-only";
+        }
+        if (trimmed.length > 255) {
+          return "Product name is too long (max 255 characters)";
+        }
+        return true;
+      },
+    },
+    {
+      type: "input",
+      name: "costMultiplier",
+      message: "Cost multiplier (default: 1.0, optional):",
+      when: options.costMultiplier === undefined,
+      validate: (input: string) => {
+        if (!input) return true;
+        const num = Number(input.trim());
+        if (isNaN(num) || !isFinite(num)) {
+          return "Please enter a valid number";
+        }
+        if (num <= 0) return "Cost multiplier must be greater than 0";
+        return true;
       },
     },
     {
@@ -155,12 +203,10 @@ async function collectConfiguration(
     },
   ]);
 
-  // Normalize endpoint by removing trailing slashes and /meter paths
   const rawEndpoint =
     options.endpoint || answers.endpoint || DEFAULT_REVENIUM_URL;
-  let endpoint = rawEndpoint.replace(/\/+$/, ""); // Remove trailing slashes
+  let endpoint = rawEndpoint.replace(/\/+$/, "");
 
-  // Strip /meter paths if user included them
   try {
     const url = new URL(endpoint);
     if (url.pathname.includes("/meter")) {
@@ -168,15 +214,33 @@ async function collectConfiguration(
       endpoint = url.origin + url.pathname;
     }
   } catch {
-    // If URL parsing fails, just use the cleaned endpoint as-is
+    // Ignore URL parsing errors - use cleaned endpoint as-is
   }
 
-  // Remove any remaining trailing slashes after path manipulation
   endpoint = endpoint.replace(/\/+$/, "");
+
+  const costMultiplierStr =
+    options.costMultiplier !== undefined
+      ? options.costMultiplier.toString()
+      : answers.costMultiplier;
+  const costMultiplier =
+    costMultiplierStr && costMultiplierStr.toString().trim()
+      ? parseFloat(costMultiplierStr.toString())
+      : undefined;
 
   return {
     apiKey: options.apiKey || answers.apiKey,
-    email: options.email || answers.email || undefined,
+    email: options.email || answers.email?.trim() || undefined,
+    organizationName:
+      options.organizationName?.trim() ||
+      answers.organizationName?.trim() ||
+      undefined,
+    productName:
+      options.productName?.trim() || answers.productName?.trim() || undefined,
+    costMultiplier:
+      costMultiplier !== undefined && !isNaN(costMultiplier)
+        ? costMultiplier
+        : undefined,
     endpoint,
   };
 }
@@ -190,10 +254,23 @@ function printSuccessMessage(config: ReveniumConfig): void {
   if (config.email) {
     console.log(`  Email:      ${maskEmail(config.email)}`);
   }
+  if (config.organizationName) {
+    console.log(`  Organization: ${config.organizationName}`);
+  }
+  if (config.productName) {
+    console.log(`  Product:    ${config.productName}`);
+  }
+  if (config.costMultiplier !== undefined) {
+    console.log(`  Cost Multiplier: ${config.costMultiplier}`);
+  }
+
+  const shellType = detectShell();
+  const configFile =
+    shellType === "fish" ? "~/.gemini/revenium.fish" : "~/.gemini/revenium.env";
 
   console.log("\n" + chalk.yellow.bold("Next steps:"));
   console.log("  1. Restart your terminal or run:");
-  console.log(chalk.cyan("     source ~/.gemini/revenium.env"));
+  console.log(chalk.cyan(`     source ${configFile}`));
   console.log(
     "  2. Start using Gemini CLI - telemetry will be sent automatically",
   );

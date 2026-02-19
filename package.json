@@ -1,6 +1,6 @@
 {
   "name": "@revenium/gemini-cli-metering",
-  "version": "0.1.1",
+  "version": "0.2.3",
   "description": "CLI tool to configure Gemini CLI telemetry export to Revenium",
   "type": "module",
   "main": "dist/index.js",
@@ -36,11 +36,6 @@
     "url": "https://github.com/revenium/revenium-gemini-cli-sdk/issues"
   },
   "homepage": "https://github.com/revenium/revenium-gemini-cli-sdk#readme",
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "engines": {
     "node": ">=18.0.0"
   },
@@ -53,6 +48,9 @@
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.17.12",
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/parser": "^8.53.1",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^8.57.1",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",

@@ -71,4 +71,6 @@ program
 
 export { program };
 
-program.parse();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  program.parse();
+}

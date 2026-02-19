@@ -28,6 +28,10 @@ export { sendOtlpLogs, createTestPayload, generateTestSessionId, checkEndpointHe
 export { detectShell, getProfilePath, getSourceCommand } from './core/shell/detector.js';
 export { updateShellProfile, getManualInstructions } from './core/shell/profile-updater.js';
 
+// Tool Metering
+export { meterTool, reportToolCall } from './core/tool-tracker.js';
+export { setToolContext, getToolContext, clearToolContext, runWithToolContext } from './core/tool-context.js';
+
 // Utils
 export { maskApiKey, maskEmail } from './utils/masking.js';
 export { DEFAULT_REVENIUM_URL, OTLP_PATH, API_KEY_PREFIX, GEMINI_CONFIG_DIR, REVENIUM_ENV_FILE, ENV_VARS } from './utils/constants.js';

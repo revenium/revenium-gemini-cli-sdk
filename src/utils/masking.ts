@@ -7,8 +7,8 @@
  * Example: "hak_tenant_abc123xyz" -> "hak_***xyz"
  */
 export function maskApiKey(apiKey: string): string {
-  if (!apiKey || apiKey.length < 8) {
-    return '***';
+  if (!apiKey || apiKey.length < 12) {
+    return "***";
   }
 
   const prefix = apiKey.substring(0, 4); // "hak_"
@@ -21,9 +21,9 @@ export function maskApiKey(apiKey: string): string {
  * Example: "dev@company.com" -> "d***@company.com"
  */
 export function maskEmail(email: string): string {
-  const atIndex = email.indexOf('@');
+  const atIndex = email.indexOf("@");
   if (atIndex <= 0) {
-    return '***';
+    return "***";
   }
 
   const firstChar = email.charAt(0);

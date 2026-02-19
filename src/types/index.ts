@@ -1,39 +1,17 @@
-/**
- * Configuration stored in ~/.gemini/revenium.env
- */
 export interface ReveniumConfig {
   apiKey: string;
   endpoint: string;
   email?: string;
-  /** Optional organization name for attributing costs to a specific customer/company */
   organizationName?: string;
-  /**
-   * @deprecated Use organizationName instead. This field will be removed in a future version.
-   * Organization or company identifier
-   */
-  organizationId?: string;
-  /** Optional product name for attributing costs to a specific product/project */
   productName?: string;
-  /**
-   * @deprecated Use productName instead. This field will be removed in a future version.
-   * Product or application identifier
-   */
-  productId?: string;
-  /** Optional cost multiplier for adjusting reported costs */
   costMultiplier?: number;
 }
 
-/**
- * Result of configuration validation
- */
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
 }
 
-/**
- * Result of endpoint health check
- */
 export interface HealthCheckResult {
   healthy: boolean;
   statusCode?: number;
@@ -41,14 +19,8 @@ export interface HealthCheckResult {
   latencyMs?: number;
 }
 
-/**
- * Shell types supported for profile updates
- */
 export type ShellType = "bash" | "zsh" | "fish" | "unknown";
 
-/**
- * Result of shell profile update
- */
 export interface ShellUpdateResult {
   success: boolean;
   shellType: ShellType;
@@ -56,9 +28,6 @@ export interface ShellUpdateResult {
   message: string;
 }
 
-/**
- * OTLP log payload structure (matching backend expectations)
- */
 export interface OTLPLogsPayload {
   resourceLogs: Array<{
     resource?: {
@@ -84,9 +53,6 @@ export interface OTLPLogsPayload {
   }>;
 }
 
-/**
- * OTLP any value type
- */
 export interface OTLPValue {
   stringValue?: string;
   intValue?: number;
@@ -94,12 +60,11 @@ export interface OTLPValue {
   boolValue?: boolean;
 }
 
-/**
- * Response from OTLP endpoint
- */
 export interface OTLPResponse {
   id: string;
   resourceType: string;
   processedEvents: number;
   created: string;
 }
+
+export * from "./tool-metering.js";

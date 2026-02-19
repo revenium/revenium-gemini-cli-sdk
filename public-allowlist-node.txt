@@ -1,0 +1,13 @@
+src/
+docs/
+package.json
+tsconfig.json
+.env.example
+.gitignore
+README.md
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md
+CODE_OF_CONDUCT.md
+public-allowlist-node.txt

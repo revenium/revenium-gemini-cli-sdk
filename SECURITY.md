@@ -43,4 +43,4 @@ No conversation content or PII (beyond optional email) is transmitted.
 ## Additional Resources
 
 - [Revenium Documentation](https://docs.revenium.io)
-- [Revenium Privacy Policy](https://www.revenium.ai/privacy)
+- [Revenium Privacy Policy](https://www.revenium.ai/privacy-policy)
