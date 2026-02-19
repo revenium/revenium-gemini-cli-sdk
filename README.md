@@ -1,5 +1,9 @@
 # @revenium/gemini-cli-metering
 
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
+
 A CLI tool to configure Gemini CLI telemetry export to Revenium for AI usage metering and cost tracking.
 
 ## Overview
@@ -33,6 +37,9 @@ revenium-gemini setup
 The wizard will prompt you for:
 - **API Key**: Your Revenium API key (`hak_...`)
 - **Email**: For usage attribution (optional)
+- **Organization Name**: For cost attribution by customer or team (optional)
+- **Product Name**: For cost attribution by project or product (optional)
+- **Cost Multiplier**: Pricing adjustment factor, e.g., `0.8` for 20% discount (optional)
 
 ### 2. Restart Your Terminal
 
@@ -56,10 +63,13 @@ Interactive setup wizard to configure Gemini CLI metering.
 revenium-gemini setup [options]
 
 Options:
-  -k, --api-key <key>     Revenium API key (hak_...)
-  -e, --email <email>     Email for usage attribution
-  --endpoint <url>        Revenium API endpoint URL (default: https://api.revenium.ai)
-  --skip-shell-update     Skip automatic shell profile update
+  -k, --api-key <key>          Revenium API key (hak_...)
+  -e, --email <email>          Email for usage attribution
+  -o, --organization <name>    Organization name for cost attribution
+  -p, --product <name>         Product name for cost attribution
+  --cost-multiplier <number>   Pricing adjustment factor (default: 1.0)
+  --endpoint <url>             Revenium API endpoint (default: https://api.revenium.ai)
+  --skip-shell-update          Skip automatic shell profile update
 ```
 
 **Non-interactive mode:**
@@ -67,7 +77,9 @@ Options:
 ```bash
 revenium-gemini setup \
   --api-key hak_your_key_here \
-  --email developer@company.com
+  --email developer@company.com \
+  --organization "Acme Corp" \
+  --product "AI Platform"
 ```
 
 ### `revenium-gemini status`
@@ -100,12 +112,28 @@ The setup wizard creates `~/.gemini/revenium.env` with the following environment
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_TELEMETRY_ENABLED` | Enables Gemini CLI telemetry export (set to `true`) |
+| `GEMINI_TELEMETRY_ENABLED` | Enables Gemini CLI telemetry export |
 | `GEMINI_TELEMETRY_TARGET` | Target type (`local` for custom OTLP endpoint) |
 | `GEMINI_TELEMETRY_OTLP_ENDPOINT` | Revenium OTLP endpoint URL |
 | `GEMINI_TELEMETRY_OTLP_PROTOCOL` | OTLP protocol (`http`) |
-| `GEMINI_TELEMETRY_LOG_PROMPTS` | Include prompts in telemetry (`true`) |
-| `OTEL_RESOURCE_ATTRIBUTES` | Resource attributes including API key (`revenium.api_key=hak_...`) |
+| `GEMINI_TELEMETRY_LOG_PROMPTS` | Include prompts in telemetry |
+| `OTEL_EXPORTER_OTLP_HEADERS` | API key authentication header |
+| `OTEL_RESOURCE_ATTRIBUTES` | Business metadata for cost attribution |
+| `REVENIUM_ORGANIZATION_NAME` | Organization name (optional) |
+| `REVENIUM_PRODUCT_NAME` | Product name (optional) |
+| `REVENIUM_COST_MULTIPLIER` | Pricing adjustment factor (optional) |
+
+## Cost Attribution
+
+Revenium supports flexible cost attribution to track AI spend across your organization:
+
+| Field | Use Case | Example |
+|-------|----------|---------|
+| **Organization** | Attribute costs to a customer, team, or business unit | `Acme Corp`, `Engineering Team` |
+| **Product** | Track costs by project, application, or service | `Customer Support Bot`, `Code Assistant` |
+| **Cost Multiplier** | Apply negotiated discounts or internal chargebacks | `0.8` = 20% discount, `1.2` = 20% markup |
+
+These fields are included in the OTLP resource attributes and appear in Revenium dashboards for filtering and reporting.
 
 ## How It Works
 
@@ -165,7 +193,8 @@ Add to your `settings.json` (use `terminal.integrated.env.windows` or `.linux` a
     "GEMINI_TELEMETRY_OTLP_ENDPOINT": "https://api.revenium.ai/meter/v2/otlp",
     "GEMINI_TELEMETRY_OTLP_PROTOCOL": "http",
     "GEMINI_TELEMETRY_LOG_PROMPTS": "true",
-    "OTEL_RESOURCE_ATTRIBUTES": "revenium.api_key=hak_YOUR_API_KEY_HERE,cost_multiplier=1.0"
+    "OTEL_EXPORTER_OTLP_HEADERS": "x-api-key=hak_YOUR_API_KEY_HERE",
+    "OTEL_RESOURCE_ATTRIBUTES": "cost_multiplier=1.0,organization.name=YOUR_ORG,product.name=YOUR_PRODUCT"
   }
 }
 ```
@@ -187,7 +216,8 @@ Configure these environment variables in your IDE's terminal settings:
 | `GEMINI_TELEMETRY_OTLP_ENDPOINT` | `https://api.revenium.ai/meter/v2/otlp` |
 | `GEMINI_TELEMETRY_OTLP_PROTOCOL` | `http` |
 | `GEMINI_TELEMETRY_LOG_PROMPTS` | `true` |
-| `OTEL_RESOURCE_ATTRIBUTES` | `revenium.api_key=hak_YOUR_API_KEY,cost_multiplier=1.0` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `x-api-key=hak_YOUR_API_KEY` |
+| `OTEL_RESOURCE_ATTRIBUTES` | `cost_multiplier=1.0,organization.name=YOUR_ORG,product.name=YOUR_PRODUCT` |
 
 ## Troubleshooting
 
@@ -224,6 +254,60 @@ Run the setup with manual instructions:
 revenium-gemini setup --skip-shell-update
 ```
 Then manually add the source line to your shell profile.
+
+## Tool Metering
+
+Track execution of custom tools and external API calls with automatic timing, error handling, and metadata collection.
+
+### Quick Example
+
+```typescript
+import { meterTool, setToolContext } from "@revenium/gemini-cli-metering";
+
+// Set context once (propagates to all tool calls)
+setToolContext({
+  sessionId: "session-123",
+  userId: "user-456"
+});
+
+// Wrap tool execution
+const result = await meterTool("weather-api", async () => {
+  return await fetch("https://api.example.com/weather");
+}, {
+  description: "Fetch weather forecast",
+  category: "external-api",
+  outputFields: ["temperature", "humidity"]
+});
+// Automatically extracts temperature & humidity from result
+```
+
+### Functions
+
+**meterTool(toolId, fn, metadata?)**
+- Wraps a function with automatic metering
+- Captures duration, success/failure, and errors
+- Returns function result unchanged
+
+**reportToolCall(toolId, report)**
+- Manually report a tool call that was already executed
+- Useful when wrapping isn't possible
+
+**Context Management**
+- `setToolContext(ctx)` - Set context for all subsequent tool calls
+- `getToolContext()` - Get current context
+- `clearToolContext()` - Clear context
+- `runWithToolContext(ctx, fn)` - Run function with scoped context
+
+### Metadata Options
+
+| Field | Description |
+|-------|-------------|
+| `description` | Human-readable tool description |
+| `category` | Tool category (e.g., "external-api", "database") |
+| `version` | Tool version identifier |
+| `tags` | Array of tags for classification |
+| `outputFields` | Array of field names to auto-extract from result |
+| `usageMetadata` | Custom metrics (e.g., tokens, results count) |
 
 ## Local Development Testing
 
